@@ -2,7 +2,7 @@
 #define GAME_H
 
 #include <vector>
-#include "entities.h" // Incluye las clases de entidades (Player, Invader, Projectile)
+#include "entities.h"
 #include "graphics/screen.h"
 #include "graphics/sprites.h"
 #include <pthread.h>
