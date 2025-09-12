@@ -3,8 +3,8 @@
 
 #include <vector>
 #include "entities.h"
-#include "graphics/screen.h"
-#include "graphics/sprites.h"
+#include "../graphics/screen.h"
+#include "../graphics/sprites.h"
 #include <pthread.h>
 
 class Game {
@@ -26,6 +26,7 @@ private:
     
 public:
     Game(SpriteManager& sm, Screen& s);
+    ~Game();
     
     // Funciones de inicialización y bucle del juego
     void initializeGame();
