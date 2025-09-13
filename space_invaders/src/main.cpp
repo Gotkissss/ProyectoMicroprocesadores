@@ -3,19 +3,21 @@
 #include <ctime>
 #include <cstdlib>
 #include <ncurses.h>
+#include <pthread.h>
 #include "game/game.h"
 #include "graphics/screen.h"
 #include "graphics/sprites.h"
-#include <pthread.h>
 
 // Función que se ejecuta por el hilo de los invasores
 void* invaderThreadFunction(void* arg) {
     Game* game = static_cast<Game*>(arg);
+    
     while (game->isRunning()) {
-        game->updateInvaders();
         // Controlar la velocidad del movimiento usando usleep() como especifica el PDF
-        usleep(500000); // Mueve los invasores cada 0.5 segundos
+        // Ahora usa velocidad variable según el nivel
+        usleep(game->getInvaderSpeed());
     }
+    
     return NULL;
 }
 
@@ -25,49 +27,63 @@ int main() {
     
     // Inicializar ncurses usando initscr() como especifica el PDF
     initscr();
-    nodelay(stdscr, TRUE); // Permitir lectura no bloqueante como especifica el PDF
-    noecho(); // No mostrar teclas presionadas
-    cbreak(); // Deshabilitar buffering de línea
-    keypad(stdscr, TRUE); // Habilitar teclas especiales
-    curs_set(0); // Ocultar cursor
+    // No mostrar teclas presionadas como especifica el PDF
+    noecho();
+    // Deshabilitar buffering de línea
+    cbreak();
+    // Habilitar teclas especiales
+    keypad(stdscr, TRUE);
+    // Ocultar cursor
+    curs_set(0);
+    // No bloquear getch()
+    nodelay(stdscr, TRUE);
     
     // Inicialización del juego
     SpriteManager spriteManager;
     Screen screen(spriteManager);
     Game game(spriteManager, screen);
     
-    // Declaración del hilo
-    pthread_t invaderThread;
+    game.initializeGame();
     
-    // Crear el hilo de los invasores usando pthread_create() como especifica el PDF
+    // Crear hilo para el movimiento de invasores
+    pthread_t invaderThread;
     if (pthread_create(&invaderThread, NULL, invaderThreadFunction, &game) != 0) {
-        endwin(); // Limpiar ncurses antes de salir
-        std::cerr << "Error al crear el hilo de los invasores." << std::endl;
+        endwin();
+        std::cerr << "Error al crear el hilo de invasores" << std::endl;
         return 1;
     }
     
-    // Bucle principal del juego (para la entrada del jugador)
+    // Bucle principal del juego
     while (game.isRunning()) {
-        // Manejo de la entrada del jugador
-        game.handleInput();
+        // Manejo de la entrada del jugador - usar versión mejorada
+        game.handleInputImproved();
         
-        // Actualizar la lógica del juego (proyectiles, colisiones)
-        game.updateGameLogic();
+        // Actualizar la lógica del juego (proyectiles, colisiones, etc.)
+        // NOTA: updateInvaders() se ejecuta en el hilo separado
+        game.updateProjectiles();
+        game.checkCollisions();
+        game.checkPlayerCollisions();
+        game.checkInvaderReachBottom();
+        game.checkVictoryConditions();
+        game.checkGameOverConditions();
         
         // Dibujar en pantalla
         screen.clear();
         game.drawElements();
+        game.drawGameStateMessages();
         screen.draw();
         
         // Pequeño retraso para controlar el bucle usando usleep() como especifica el PDF
         usleep(16000); // ~60 FPS
     }
     
-    // Espera a que el hilo de los invasores termine usando pthread_join() como especifica el PDF
+    // Esperar a que termine el hilo de invasores
     pthread_join(invaderThread, NULL);
     
-    // Limpiar ncurses
+    // Finalizar ncurses
     endwin();
+    
+    std::cout << "¡Gracias por jugar Space Invaders!" << std::endl;
     
     return 0;
 }

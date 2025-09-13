@@ -1,15 +1,20 @@
 #include "game.h"
 #include <iostream>
-#include <unistd.h>
-#include <cstdlib>
 #include <algorithm>
-#include <ncurses.h>
 #include <ctime>
+#include <ncurses.h>
 
 Game::Game(SpriteManager& sm, Screen& s) : spriteManager(sm), screen(s) {
-    // Inicializar el mutex usando pthread_mutex_init como especifica el PDF
+    running = false;
+    score = 0;
+    lives = 3;
+    level = 1;
+    gameState = PLAYING;
+    invaderSpeed = 500000;
+    lastShotTime = 0;
+    
+    // Inicializar el mutex
     pthread_mutex_init(&gameMutex, NULL);
-    initializeGame();
 }
 
 Game::~Game() {
@@ -17,154 +22,212 @@ Game::~Game() {
 }
 
 void Game::initializeGame() {
-    running = true;
-    score = 0;
-    lives = 3;
-    level = 1;
-    
-    // Posicionar al jugador en el centro inferior
+    // Inicializar posición del jugador
     player.position.x = screen.getWidth() / 2;
     player.position.y = screen.getHeight() - 5;
     player.lives = lives;
     player.score = score;
     
-    // Generar la formación inicial de invasores
+    // Generar invasores
     generateInvaders();
+    
+    running = true;
+    gameState = PLAYING;
 }
 
 void Game::generateInvaders() {
     invaders.clear();
     
-    // Definir la formación de los invasores usando generación aleatoria con rand() como especifica el PDF
-    int startY = 5;
-    for (int y = 0; y < 3; ++y) {
-        for (int x = 0; x < 10; ++x) {
-            Invader newInvader;
-            newInvader.position.x = 5 + x * 6;
-            newInvader.position.y = startY + y * 3;
-            newInvader.type = (y < 1) ? 1 : (y < 2) ? 2 : 3;
-            newInvader.direction = 1;
-            newInvader.isAlive = true;
-            invaders.push_back(newInvader);
+    // Crear 5 filas de invasores
+    for (int row = 0; row < 5; row++) {
+        for (int col = 0; col < 11; col++) {
+            Invader invader;
+            invader.position.x = 5 + col * 6;
+            invader.position.y = 5 + row * 3;
+            invader.direction = 1;
+            invader.isAlive = true;
+            
+            // Asignar tipos según la fila
+            if (row < 1) {
+                invader.type = 1; // Tipo 1 (30 puntos)
+            } else if (row < 3) {
+                invader.type = 2; // Tipo 2 (20 puntos)
+            } else {
+                invader.type = 3; // Tipo 3 (10 puntos)
+            }
+            
+            invaders.push_back(invader);
         }
     }
 }
 
+void Game::mainLoop() {
+    while (running) {
+        handleInputImproved();
+        
+        if (gameState == PLAYING) {
+            updateGameLogic();
+        }
+        
+        // Limpiar y dibujar
+        screen.clear();
+        drawElements();
+        drawGameStateMessages();
+        screen.draw();
+        
+        // Control de velocidad del juego
+        usleep(50000); // 50ms = ~20 FPS
+    }
+}
+
+void Game::updateGameLogic() {
+    // updateInvaders() se ejecuta en el hilo separado
+    updateProjectiles();
+    checkCollisions();
+    checkPlayerCollisions();
+    checkInvaderReachBottom();
+    checkVictoryConditions();
+    checkGameOverConditions();
+    
+    // Actualizar animaciones cada cierto tiempo
+    static time_t lastAnimUpdate = 0;
+    time_t currentTime = time(NULL);
+    if (currentTime - lastAnimUpdate >= 1) {
+        spriteManager.updateAnimations();
+        lastAnimUpdate = currentTime;
+    }
+}
+
 void Game::updateInvaders() {
-    // Bloquear el acceso usando pthread_mutex_lock como especifica el PDF
     pthread_mutex_lock(&gameMutex);
     
-    bool changeDirection = false;
+    static time_t lastMoveTime = 0;
+    time_t currentTime = time(NULL);
     
-    // Verificar si algún invasor toca los bordes
-    for (auto& invader : invaders) {
-        if (!invader.isAlive) continue;
+    // Mover invasores según la velocidad del nivel
+    if (currentTime - lastMoveTime >= 1) {
+        bool hitEdge = false;
         
-        if ((invader.position.x >= screen.getWidth() - 10 && invader.direction > 0) ||
-            (invader.position.x <= 5 && invader.direction < 0)) {
-            changeDirection = true;
-            break;
-        }
-    }
-    
-    // Si hay que cambiar dirección, mover todos hacia abajo y cambiar dirección
-    if (changeDirection) {
+        // Verificar si algún invasor tocó el borde
         for (auto& invader : invaders) {
             if (!invader.isAlive) continue;
-            invader.direction *= -1;
-            invader.position.y += 2;
-        }
-    } else {
-        // Mover horizontalmente
-        for (auto& invader : invaders) {
-            if (!invader.isAlive) continue;
-            invader.position.x += invader.direction;
-        }
-    }
-    
-    // Lógica para que los invasores disparen usando rand() como especifica el PDF
-    if (rand() % 100 < 5) { // 5% de probabilidad de que un invasor dispare
-        std::vector<int> aliveInvaders;
-        for (int i = 0; i < invaders.size(); i++) {
-            if (invaders[i].isAlive) {
-                aliveInvaders.push_back(i);
+            
+            if ((invader.direction == 1 && invader.position.x >= screen.getWidth() - 10) ||
+                (invader.direction == -1 && invader.position.x <= 2)) {
+                hitEdge = true;
+                break;
             }
         }
         
-        if (!aliveInvaders.empty()) {
-            int randomIndex = aliveInvaders[rand() % aliveInvaders.size()];
-            Projectile newBullet;
-            newBullet.position.x = invaders[randomIndex].position.x + 3;
-            newBullet.position.y = invaders[randomIndex].position.y + 1;
-            newBullet.directionY = 1; // Hacia abajo
-            projectiles.push_back(newBullet);
+        // Si tocaron el borde, cambiar dirección y bajar
+        if (hitEdge) {
+            for (auto& invader : invaders) {
+                if (invader.isAlive) {
+                    invader.direction *= -1;
+                    invader.position.y += 2;
+                }
+            }
+        } else {
+            // Mover horizontalmente
+            for (auto& invader : invaders) {
+                if (invader.isAlive) {
+                    invader.position.x += invader.direction;
+                }
+            }
+        }
+        
+        // Los invasores disparan ocasionalmente
+        if (rand() % 50 == 0) {
+            for (auto& invader : invaders) {
+                if (invader.isAlive && rand() % 100 < 5) {
+                    Projectile bullet;
+                    bullet.position.x = invader.position.x + 3;
+                    bullet.position.y = invader.position.y + 2;
+                    bullet.directionY = 1;
+                    projectiles.push_back(bullet);
+                    break;
+                }
+            }
+        }
+        
+        lastMoveTime = currentTime;
+    }
+    
+    pthread_mutex_unlock(&gameMutex);
+}
+
+void Game::updateProjectiles() {
+    pthread_mutex_lock(&gameMutex);
+    
+    for (auto it = projectiles.begin(); it != projectiles.end();) {
+        it->position.y += it->directionY;
+        
+        // Eliminar proyectiles que salen de la pantalla
+        if (it->position.y < 0 || it->position.y >= screen.getHeight()) {
+            it = projectiles.erase(it);
+        } else {
+            ++it;
         }
     }
     
-    // Desbloquear usando pthread_mutex_unlock como especifica el PDF
     pthread_mutex_unlock(&gameMutex);
 }
 
 void Game::checkCollisions() {
     pthread_mutex_lock(&gameMutex);
     
-    // Revisar colisiones proyectil-invasor
-    for (auto& projectile : projectiles) {
-        if (projectile.directionY == -1) { // Proyectil del jugador
+    for (auto projIt = projectiles.begin(); projIt != projectiles.end();) {
+        bool hit = false;
+        
+        if (projIt->directionY == -1) { // Proyectil del jugador
             for (auto& invader : invaders) {
-                if (!invader.isAlive) continue;
-                
-                if (projectile.position.x >= invader.position.x &&
-                    projectile.position.x < invader.position.x + 7 &&
-                    projectile.position.y >= invader.position.y &&
-                    projectile.position.y < invader.position.y + 2) {
+                if (invader.isAlive &&
+                    projIt->position.x >= invader.position.x &&
+                    projIt->position.x <= invader.position.x + 6 &&
+                    projIt->position.y >= invader.position.y &&
+                    projIt->position.y <= invader.position.y + 1) {
                     
                     invader.isAlive = false;
-                    projectile.directionY = 0; // Marcar proyectil para eliminar
-                    
-                    // Sumar puntos según tipo de invasor
-                    switch(invader.type) {
-                        case 1: score += 30; break;
-                        case 2: score += 20; break;
-                        case 3: score += 10; break;
-                    }
+                    score += (invader.type == 1) ? 30 : (invader.type == 2) ? 20 : 10;
                     player.score = score;
+                    hit = true;
+                    break;
                 }
             }
         }
+        
+        if (hit) {
+            projIt = projectiles.erase(projIt);
+        } else {
+            ++projIt;
+        }
     }
-    
-    // Eliminar proyectiles marcados
-    projectiles.erase(
-        std::remove_if(projectiles.begin(), projectiles.end(),
-            [](const Projectile& p) { return p.directionY == 0; }),
-        projectiles.end()
-    );
     
     pthread_mutex_unlock(&gameMutex);
 }
 
 void Game::drawElements() {
-    pthread_mutex_lock(&gameMutex);
-    
-    // Dibujar el borde y la UI
+    // Dibujar borde
     screen.drawBorder();
+    
+    // Dibujar UI
     screen.drawUI(score, lives, level);
     
-    // Dibujar el jugador
+    pthread_mutex_lock(&gameMutex);
+    
+    // Dibujar jugador
     screen.drawSprite(spriteManager.getPlayerSprite(), player.position);
     
-    // Dibujar todos los invasores
+    // Dibujar invasores
     for (const auto& invader : invaders) {
         if (invader.isAlive) {
-            const Sprite& invaderSprite = spriteManager.getInvaderSprite(invader.type);
-            screen.drawSprite(invaderSprite, invader.position);
+            screen.drawSprite(spriteManager.getInvaderSprite(invader.type), invader.position);
         }
     }
     
     // Dibujar proyectiles
-    for (const auto& bullet : projectiles) {
-        screen.drawSprite(spriteManager.getBulletSprite(), bullet.position);
+    for (const auto& projectile : projectiles) {
+        screen.drawSprite(spriteManager.getBulletSprite(), projectile.position);
     }
     
     pthread_mutex_unlock(&gameMutex);
@@ -178,50 +241,170 @@ void Game::setRunning(bool status) {
     running = status;
 }
 
-void Game::handleInput() {
-    // Usar getch() de ncurses como especifica el PDF para captura en tiempo real
+// Implementación de las funciones adicionales del documento game.cpp
+
+void Game::checkPlayerCollisions() {
+    pthread_mutex_lock(&gameMutex);
+    
+    for (auto it = projectiles.begin(); it != projectiles.end();) {
+        if (it->directionY == 1) { // Proyectil de invasor (hacia abajo)
+            if (it->position.x >= player.position.x &&
+                it->position.x <= player.position.x + 4 &&
+                it->position.y >= player.position.y &&
+                it->position.y <= player.position.y + 2) {
+                
+                lives--;
+                player.lives = lives;
+                it = projectiles.erase(it);
+                break;
+            } else {
+                ++it;
+            }
+        } else {
+            ++it;
+        }
+    }
+    
+    pthread_mutex_unlock(&gameMutex);
+}
+
+void Game::checkInvaderReachBottom() {
+    pthread_mutex_lock(&gameMutex);
+    
+    for (const auto& invader : invaders) {
+        if (invader.isAlive && invader.position.y >= screen.getHeight() - 8) {
+            running = false;
+            gameState = GAME_OVER;
+            pthread_mutex_unlock(&gameMutex);
+            return;
+        }
+    }
+    
+    pthread_mutex_unlock(&gameMutex);
+}
+
+void Game::checkVictoryConditions() {
+    pthread_mutex_lock(&gameMutex);
+    
+    bool allInvadersDead = true;
+    for (const auto& invader : invaders) {
+        if (invader.isAlive) {
+            allInvadersDead = false;
+            break;
+        }
+    }
+    
+    if (allInvadersDead) {
+        gameState = LEVEL_COMPLETE;
+    }
+    
+    pthread_mutex_unlock(&gameMutex);
+}
+
+void Game::checkGameOverConditions() {
+    pthread_mutex_lock(&gameMutex);
+    
+    if (lives <= 0) {
+        running = false;
+        gameState = GAME_OVER;
+    }
+    
+    pthread_mutex_unlock(&gameMutex);
+}
+
+void Game::nextLevel() {
+    pthread_mutex_lock(&gameMutex);
+    
+    level++;
+    projectiles.clear();
+    generateInvaders();
+    invaderSpeed = std::max(200000, 500000 - (level * 50000));
+    
+    player.position.x = screen.getWidth() / 2;
+    player.position.y = screen.getHeight() - 5;
+    
+    gameState = PLAYING;
+    
+    pthread_mutex_unlock(&gameMutex);
+}
+
+void Game::resetGame() {
+    pthread_mutex_lock(&gameMutex);
+    
+    score = 0;
+    lives = 3;
+    level = 1;
+    invaderSpeed = 500000;
+    
+    player.score = score;
+    player.lives = lives;
+    player.position.x = screen.getWidth() / 2;
+    player.position.y = screen.getHeight() - 5;
+    
+    projectiles.clear();
+    generateInvaders();
+    
+    gameState = PLAYING;
+    running = true;
+    
+    pthread_mutex_unlock(&gameMutex);
+}
+
+void Game::drawGameStateMessages() {
+    pthread_mutex_lock(&gameMutex);
+    
+    switch(gameState) {
+        case GAME_OVER:
+            screen.drawText("GAME OVER!", Position(screen.getWidth()/2 - 5, screen.getHeight()/2));
+            screen.drawText("Press R to restart or Q to quit", Position(screen.getWidth()/2 - 15, screen.getHeight()/2 + 2));
+            break;
+            
+        case LEVEL_COMPLETE:
+            screen.drawText("LEVEL COMPLETE!", Position(screen.getWidth()/2 - 7, screen.getHeight()/2));
+            screen.drawText("Press SPACE to continue", Position(screen.getWidth()/2 - 10, screen.getHeight()/2 + 2));
+            break;
+            
+        case PAUSED:
+            screen.drawText("PAUSED", Position(screen.getWidth()/2 - 3, screen.getHeight()/2));
+            screen.drawText("Press P to continue", Position(screen.getWidth()/2 - 8, screen.getHeight()/2 + 2));
+            break;
+        
+        case PLAYING:
+            break;
+    }
+    
+    pthread_mutex_unlock(&gameMutex);
+}
+
+void Game::handleInputImproved() {
     int key = getch();
     
-    if (key != ERR) { // Si se presionó una tecla
+    if (key != ERR) {
         pthread_mutex_lock(&gameMutex);
         
-        switch(key) {
-            case 'a':
-            case 'A':
-            case KEY_LEFT:
-                // Mover jugador a la izquierda
-                if (player.position.x > 2) {
-                    player.position.x -= 2;
+        switch(gameState) {
+            case PLAYING:
+                handlePlayingInput(key);
+                break;
+                
+            case GAME_OVER:
+                if (key == 'r' || key == 'R') {
+                    resetGame();
+                } else if (key == 'q' || key == 'Q' || key == 27) {
+                    running = false;
                 }
                 break;
-            case 'd':
-            case 'D':
-            case KEY_RIGHT:
-                // Mover jugador a la derecha
-                if (player.position.x < screen.getWidth() - 7) {
-                    player.position.x += 2;
+                
+            case LEVEL_COMPLETE:
+                if (key == ' ') {
+                    nextLevel();
                 }
                 break;
-            case ' ':
-            case KEY_UP: // También permitir flecha arriba para disparar
-                // Disparar
-                {
-                    Projectile newBullet;
-                    newBullet.position.x = player.position.x + 2; // Centro del jugador
-                    newBullet.position.y = player.position.y - 1;
-                    newBullet.directionY = -1; // Hacia arriba
-                    projectiles.push_back(newBullet);
+                
+            case PAUSED:
+                if (key == 'p' || key == 'P') {
+                    gameState = PLAYING;
                 }
-                break;
-            case 'p':
-            case 'P':
-                // Pausar juego usando usleep() como especifica el PDF
-                usleep(100000); // Pausa breve
-                break;
-            case 'q':
-            case 'Q':
-            case 27: // ESC
-                running = false;
                 break;
         }
         
@@ -229,31 +412,42 @@ void Game::handleInput() {
     }
 }
 
-void Game::updateGameLogic() {
-    updateProjectiles();
-    checkCollisions();
-}
-
-void Game::updateProjectiles() {
-    pthread_mutex_lock(&gameMutex);
-    
-    // Mover proyectiles
-    for (auto& projectile : projectiles) {
-        projectile.position.y += projectile.directionY;
+void Game::handlePlayingInput(int key) {
+    switch(key) {
+        case 'a': case 'A': case KEY_LEFT:
+            if (player.position.x > 2) {
+                player.position.x -= 2;
+            }
+            break;
+            
+        case 'd': case 'D': case KEY_RIGHT:
+            if (player.position.x < screen.getWidth() - 7) {
+                player.position.x += 2;
+            }
+            break;
+            
+        case ' ': case KEY_UP:
+            if (canShoot()) {
+                Projectile newBullet;
+                newBullet.position.x = player.position.x + 2;
+                newBullet.position.y = player.position.y - 1;
+                newBullet.directionY = -1;
+                projectiles.push_back(newBullet);
+                lastShotTime = time(NULL);
+            }
+            break;
+            
+        case 'p': case 'P':
+            gameState = PAUSED;
+            break;
+            
+        case 'q': case 'Q': case 27:
+            running = false;
+            break;
     }
-    
-    // Eliminar proyectiles fuera de pantalla
-    projectiles.erase(
-        std::remove_if(projectiles.begin(), projectiles.end(),
-            [this](const Projectile& p) {
-                return p.position.y < 3 || p.position.y >= screen.getHeight() - 1;
-            }),
-        projectiles.end()
-    );
-    
-    pthread_mutex_unlock(&gameMutex);
 }
 
-void Game::mainLoop() {
-    // Función vacía por ahora - la lógica está en main()
+bool Game::canShoot() {
+    time_t currentTime = time(NULL);
+    return (currentTime - lastShotTime) >= 1;
 }
