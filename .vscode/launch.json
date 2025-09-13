@@ -1,0 +1,22 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Space Invaders",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/space_invaders.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "MSYSTEM",
+                    "value": "UCRT64"
+                }
+            ],
+            "console": "integratedTerminal",
+            "preLaunchTask": "build-space-invaders"
+        }
+    ]
+}

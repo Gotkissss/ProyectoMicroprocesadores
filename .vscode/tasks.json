@@ -1,0 +1,30 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build-space-invaders",
+            "type": "shell",
+            "command": "g++",
+            "args": [
+                "-I", "src",
+                "-pthread",
+                "-lncurses",
+                "-o", "space_invaders",
+                "src/main.cpp",
+                "src/game/game.cpp", 
+                "src/graphics/sprites.cpp",
+                "src/graphics/screen.cpp"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "options": {
+                "env": {
+                    "MSYSTEM": "UCRT64"
+                }
+            },
+            "problemMatcher": ["$gcc"]
+        }
+    ]
+}

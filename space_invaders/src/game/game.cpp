@@ -3,17 +3,11 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <algorithm>
-
-#ifdef _WIN32
-    #include <conio.h>
-    #include <windows.h>
-#else
-    #include <termios.h>
-    #include <fcntl.h>
-#endif
+#include <ncurses.h>
+#include <ctime>
 
 Game::Game(SpriteManager& sm, Screen& s) : spriteManager(sm), screen(s) {
-    // Inicializar el mutex
+    // Inicializar el mutex usando pthread_mutex_init como especifica el PDF
     pthread_mutex_init(&gameMutex, NULL);
     initializeGame();
 }
@@ -41,7 +35,7 @@ void Game::initializeGame() {
 void Game::generateInvaders() {
     invaders.clear();
     
-    // Definir la formación de los invasores
+    // Definir la formación de los invasores usando generación aleatoria con rand() como especifica el PDF
     int startY = 5;
     for (int y = 0; y < 3; ++y) {
         for (int x = 0; x < 10; ++x) {
@@ -57,7 +51,7 @@ void Game::generateInvaders() {
 }
 
 void Game::updateInvaders() {
-    // Bloquear el acceso al vector de invasores para evitar condiciones de carrera
+    // Bloquear el acceso usando pthread_mutex_lock como especifica el PDF
     pthread_mutex_lock(&gameMutex);
     
     bool changeDirection = false;
@@ -88,7 +82,7 @@ void Game::updateInvaders() {
         }
     }
     
-    // Lógica para que los invasores disparen aleatoriamente
+    // Lógica para que los invasores disparen usando rand() como especifica el PDF
     if (rand() % 100 < 5) { // 5% de probabilidad de que un invasor dispare
         std::vector<int> aliveInvaders;
         for (int i = 0; i < invaders.size(); i++) {
@@ -107,7 +101,7 @@ void Game::updateInvaders() {
         }
     }
     
-    // Desbloquear el mutex
+    // Desbloquear usando pthread_mutex_unlock como especifica el PDF
     pthread_mutex_unlock(&gameMutex);
 }
 
@@ -138,7 +132,6 @@ void Game::checkCollisions() {
                 }
             }
         }
-        // Aquí puedes agregar colisiones proyectil-jugador después
     }
     
     // Eliminar proyectiles marcados
@@ -186,86 +179,54 @@ void Game::setRunning(bool status) {
 }
 
 void Game::handleInput() {
-    #ifdef _WIN32
-        if (_kbhit()) {
-            char key = _getch();
-            
-            pthread_mutex_lock(&gameMutex);
-            
-            switch(key) {
-                case 'a':
-                case 'A':
-                    // Mover jugador a la izquierda
-                    if (player.position.x > 2) {
-                        player.position.x -= 2;
-                    }
-                    break;
-                case 'd':
-                case 'D':
-                    // Mover jugador a la derecha
-                    if (player.position.x < screen.getWidth() - 7) {
-                        player.position.x += 2;
-                    }
-                    break;
-                case ' ':
-                    // Disparar
-                    {
-                        Projectile newBullet;
-                        newBullet.position.x = player.position.x + 2; // Centro del jugador
-                        newBullet.position.y = player.position.y - 1;
-                        newBullet.directionY = -1; // Hacia arriba
-                        projectiles.push_back(newBullet);
-                    }
-                    break;
-                case 'q':
-                case 'Q':
-                case 27: // ESC
-                    running = false;
-                    break;
-            }
-            
-            pthread_mutex_unlock(&gameMutex);
-        }
-    #else
-        // Implementación básica para Linux
-        int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-        fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+    // Usar getch() de ncurses como especifica el PDF para captura en tiempo real
+    int key = getch();
+    
+    if (key != ERR) { // Si se presionó una tecla
+        pthread_mutex_lock(&gameMutex);
         
-        char key;
-        if (read(STDIN_FILENO, &key, 1) == 1) {
-            pthread_mutex_lock(&gameMutex);
-            
-            switch(key) {
-                case 'a':
-                case 'A':
-                    if (player.position.x > 2) {
-                        player.position.x -= 2;
-                    }
-                    break;
-                case 'd':
-                case 'D':
-                    if (player.position.x < screen.getWidth() - 7) {
-                        player.position.x += 2;
-                    }
-                    break;
-                case ' ':
-                    {
-                        Projectile newBullet;
-                        newBullet.position.x = player.position.x + 2;
-                        newBullet.position.y = player.position.y - 1;
-                        newBullet.directionY = -1;
-                        projectiles.push_back(newBullet);
-                    }
-                    break;
-                case 'q':
-                case 'Q':
-                    running = false;
-                    break;
-            }
-            
-            pthread_mutex_unlock(&gameMutex);
+        switch(key) {
+            case 'a':
+            case 'A':
+            case KEY_LEFT:
+                // Mover jugador a la izquierda
+                if (player.position.x > 2) {
+                    player.position.x -= 2;
+                }
+                break;
+            case 'd':
+            case 'D':
+            case KEY_RIGHT:
+                // Mover jugador a la derecha
+                if (player.position.x < screen.getWidth() - 7) {
+                    player.position.x += 2;
+                }
+                break;
+            case ' ':
+            case KEY_UP: // También permitir flecha arriba para disparar
+                // Disparar
+                {
+                    Projectile newBullet;
+                    newBullet.position.x = player.position.x + 2; // Centro del jugador
+                    newBullet.position.y = player.position.y - 1;
+                    newBullet.directionY = -1; // Hacia arriba
+                    projectiles.push_back(newBullet);
+                }
+                break;
+            case 'p':
+            case 'P':
+                // Pausar juego usando usleep() como especifica el PDF
+                usleep(100000); // Pausa breve
+                break;
+            case 'q':
+            case 'Q':
+            case 27: // ESC
+                running = false;
+                break;
         }
-    #endif
+        
+        pthread_mutex_unlock(&gameMutex);
+    }
 }
 
 void Game::updateGameLogic() {

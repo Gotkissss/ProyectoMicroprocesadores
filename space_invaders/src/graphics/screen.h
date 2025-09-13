@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <string>
+#include <ncurses.h>
 #include "sprites.h"
 
 // Posición en la pantalla

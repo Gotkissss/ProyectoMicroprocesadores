@@ -1,14 +1,7 @@
 #include "screen.h"
 #include <iostream>
 #include <cstdlib>
-
-#ifdef _WIN32
-    #include <windows.h>
-    #include <conio.h>
-#else
-    #include <unistd.h>
-    #include <termios.h>
-#endif
+#include <ncurses.h>
 
 Screen::Screen(SpriteManager& sm) : spriteManager(sm) {
     width = SCREEN_WIDTH;
@@ -25,25 +18,23 @@ void Screen::clear() {
 }
 
 void Screen::clearConsole() {
-#ifdef _WIN32
-    system("cls");
-#else
-    system("clear");
-#endif
+    // Con ncurses no necesitamos system calls
+    ::clear(); // Llamada a la función clear() de ncurses
 }
 
 void Screen::draw() {
-    // Mover cursor al inicio
-    std::cout << "\033[H";
+    // Limpiar pantalla de ncurses
+    ::clear();
     
-    // Dibujar el buffer
+    // Dibujar el buffer usando ncurses
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            std::cout << buffer[y][x];
+            mvaddch(y, x, buffer[y][x]);
         }
-        std::cout << '\n';
     }
-    std::cout.flush();
+    
+    // Refrescar pantalla
+    refresh();
 }
 
 void Screen::drawSprite(const Sprite& sprite, Position pos, int frame) {
