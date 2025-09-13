@@ -9,7 +9,7 @@
 MenuSystem::MenuSystem() {
     currentState = MAIN_MENU;
     selectedOption = 0;
-    maxOptions = 4; // Para menú principal
+    maxOptions = 4; 
     highScoreFile = "high_scores.txt";
     playerName = "";
     
@@ -18,7 +18,7 @@ MenuSystem::MenuSystem() {
     noecho();
     cbreak();
     keypad(stdscr, TRUE);
-    curs_set(0); // Ocultar cursor
+    curs_set(0);
     
     // Cargar puntajes
     loadHighScores();
@@ -92,7 +92,7 @@ void MenuSystem::drawMainMenu() {
     for (int i = 0; i < 4; i++) {
         int y = startY + i * 2;
         if (i == selectedOption) {
-            attron(A_REVERSE); // Resaltar opción seleccionada
+            attron(A_REVERSE);
             drawCenteredText(y, std::string(">>> ") + options[i] + " <<<");
             attroff(A_REVERSE);
         } else {
@@ -183,7 +183,7 @@ void MenuSystem::drawEnterName() {
     // Mostrar nombre actual
     std::string displayName = playerName;
     if (displayName.length() < 12) {
-        displayName += "_"; // Cursor visual
+        displayName += "_";
     }
     
     attron(A_REVERSE);
@@ -202,8 +202,8 @@ void MenuSystem::handleMainMenuInput(int key) {
         case KEY_DOWN:
             selectedOption = (selectedOption + 1) % 4;
             break;
-        case 10: // ENTER
-        case 13: // CR
+        case 10: 
+        case 13: 
             switch (selectedOption) {
                 case 0: // Iniciar Juego
                     currentState = ENTER_NAME;
@@ -221,7 +221,7 @@ void MenuSystem::handleMainMenuInput(int key) {
             break;
         case 'q':
         case 'Q':
-        case 27: // ESC
+        case 27:
             currentState = EXIT_PROGRAM;
             break;
     }
@@ -239,13 +239,13 @@ void MenuSystem::handleHighScoresInput(int key) {
 
 void MenuSystem::handleEnterNameInput(int key) {
     switch (key) {
-        case 10: // ENTER
-        case 13: // CR
+        case 10: 
+        case 13: 
             if (playerName.length() > 0) {
                 currentState = GAME_RUNNING;
             }
             break;
-        case 27: // ESC
+        case 27:
             currentState = MAIN_MENU;
             selectedOption = 0;
             playerName = "";
@@ -258,7 +258,7 @@ void MenuSystem::handleEnterNameInput(int key) {
             }
             break;
         default:
-            // Agregar caracter si es válido y hay espacio
+            // Agregar caracter si es válido
             if (key >= 32 && key <= 126 && playerName.length() < 12) {
                 playerName += (char)key;
             }
