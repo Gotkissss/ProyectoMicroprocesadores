@@ -22,7 +22,29 @@ Game::~Game() {
 }
 
 void Game::initializeGame() {
-    // Inicializar posición del jugador
+    // Configurar ncurses para entrada no-bloqueante
+    initscr();
+    noecho();
+    cbreak();
+    keypad(stdscr, TRUE);
+    curs_set(0);
+    nodelay(stdscr, TRUE);  // Esta es la línea clave - hace getch() no-bloqueante
+    timeout(0);             // Timeout de 0ms para getch()
+    
+    // Reinicializar todas las variables del juego
+    running = true;
+    gameState = PLAYING;
+    score = 0;
+    lives = 3;
+    level = 1;
+    invaderSpeed = 500000;
+    lastShotTime = 0;
+    
+    // Limpiar contenedores
+    projectiles.clear();
+    invaders.clear();
+    
+    // Inicializar posición del jugador DESPUÉS de establecer lives
     player.position.x = screen.getWidth() / 2;
     player.position.y = screen.getHeight() - 5;
     player.lives = lives;
@@ -30,20 +52,17 @@ void Game::initializeGame() {
     
     // Generar invasores
     generateInvaders();
-    
-    running = true;
-    gameState = PLAYING;
 }
 
 void Game::generateInvaders() {
     invaders.clear();
     
-    // Crear 5 filas de invasores
+    // Crear 5 filas de invasores - POSICIONES CORREGIDAS
     for (int row = 0; row < 5; row++) {
         for (int col = 0; col < 11; col++) {
             Invader invader;
             invader.position.x = 5 + col * 6;
-            invader.position.y = 5 + row * 3;
+            invader.position.y = 2 + row * 2; // CAMBIO: Empezar en y=2 con separación de 2
             invader.direction = 1;
             invader.isAlive = true;
             
@@ -75,8 +94,8 @@ void Game::mainLoop() {
         drawGameStateMessages();
         screen.draw();
         
-        // Control de velocidad del juego
-        usleep(50000); // 50ms = ~20 FPS
+        // Control de velocidad del juego - reducido para mejor fluidez
+        usleep(30000); // 30ms = ~33 FPS (antes era 50ms)
     }
 }
 
@@ -95,6 +114,12 @@ void Game::updateGameLogic() {
     if (currentTime - lastAnimUpdate >= 1) {
         spriteManager.updateAnimations();
         lastAnimUpdate = currentTime;
+    }
+}
+
+void Game::checkGameOverConditions() {
+    if (lives <= 0) {
+        gameState = GAME_OVER;
     }
 }
 
@@ -241,7 +266,14 @@ void Game::setRunning(bool status) {
     running = status;
 }
 
-// Implementación de las funciones adicionales del documento game.cpp
+// Agregar métodos getScore() y getLevel() que faltaban
+int Game::getScore() const {
+    return score;
+}
+
+int Game::getLevel() const {
+    return level;
+}
 
 void Game::checkPlayerCollisions() {
     pthread_mutex_lock(&gameMutex);
@@ -296,17 +328,6 @@ void Game::checkVictoryConditions() {
     
     if (allInvadersDead) {
         gameState = LEVEL_COMPLETE;
-    }
-    
-    pthread_mutex_unlock(&gameMutex);
-}
-
-void Game::checkGameOverConditions() {
-    pthread_mutex_lock(&gameMutex);
-    
-    if (lives <= 0) {
-        running = false;
-        gameState = GAME_OVER;
     }
     
     pthread_mutex_unlock(&gameMutex);
@@ -379,7 +400,7 @@ void Game::drawGameStateMessages() {
 void Game::handleInputImproved() {
     int key = getch();
     
-    if (key != ERR) {
+    if (key != ERR) {  // ERR significa que no hay entrada disponible
         pthread_mutex_lock(&gameMutex);
         
         switch(gameState) {

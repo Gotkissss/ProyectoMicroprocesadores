@@ -72,6 +72,10 @@ public:
     bool isRunning() const;
     void setRunning(bool status);
     int getInvaderSpeed() const { return invaderSpeed; }
+    
+    // Métodos que faltaban - agregados para el sistema de menús
+    int getScore() const;
+    int getLevel() const;
 };
 
 #endif

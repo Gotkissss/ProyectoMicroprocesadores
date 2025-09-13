@@ -6,6 +6,8 @@
 #include <ncurses.h>
 #include "sprites.h"
 
+// Las constantes ya están definidas en sprites.h
+
 // Posición en la pantalla
 struct Position {
     int x, y;
