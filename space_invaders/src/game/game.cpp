@@ -28,8 +28,8 @@ void Game::initializeGame() {
     cbreak();
     keypad(stdscr, TRUE);
     curs_set(0);
-    nodelay(stdscr, TRUE);  // Esta es la línea clave - hace getch() no-bloqueante
-    timeout(0);             // Timeout de 0ms para getch()
+    nodelay(stdscr, TRUE);
+    timeout(0);
     
     // Reinicializar todas las variables del juego
     running = true;
@@ -44,7 +44,7 @@ void Game::initializeGame() {
     projectiles.clear();
     invaders.clear();
     
-    // Inicializar posición del jugador DESPUÉS de establecer lives
+    // Inicializar posición del jugador
     player.position.x = screen.getWidth() / 2;
     player.position.y = screen.getHeight() - 5;
     player.lives = lives;
@@ -57,22 +57,22 @@ void Game::initializeGame() {
 void Game::generateInvaders() {
     invaders.clear();
     
-    // Crear 5 filas de invasores - POSICIONES CORREGIDAS
+    // Crear 5 filas de invasores
     for (int row = 0; row < 5; row++) {
         for (int col = 0; col < 11; col++) {
             Invader invader;
             invader.position.x = 5 + col * 6;
-            invader.position.y = 2 + row * 2; // CAMBIO: Empezar en y=2 con separación de 2
+            invader.position.y = 2 + row * 2;
             invader.direction = 1;
             invader.isAlive = true;
             
             // Asignar tipos según la fila
             if (row < 1) {
-                invader.type = 1; // Tipo 1 (30 puntos)
+                invader.type = 1;
             } else if (row < 3) {
-                invader.type = 2; // Tipo 2 (20 puntos)
+                invader.type = 2;
             } else {
-                invader.type = 3; // Tipo 3 (10 puntos)
+                invader.type = 3;
             }
             
             invaders.push_back(invader);
@@ -94,13 +94,12 @@ void Game::mainLoop() {
         drawGameStateMessages();
         screen.draw();
         
-        // Control de velocidad del juego - reducido para mejor fluidez
-        usleep(30000); // 30ms = ~33 FPS (antes era 50ms)
+        // Control de velocidad del juego
+        usleep(30000); // 30ms = ~33 FPS
     }
 }
 
 void Game::updateGameLogic() {
-    // updateInvaders() se ejecuta en el hilo separado
     updateProjectiles();
     checkCollisions();
     checkPlayerCollisions();
@@ -125,6 +124,12 @@ void Game::checkGameOverConditions() {
 
 void Game::updateInvaders() {
     pthread_mutex_lock(&gameMutex);
+    
+    // Si el juego no está corriendo o no está en PLAYING, no actualizar
+    if (!running || gameState != PLAYING) {
+        pthread_mutex_unlock(&gameMutex);
+        return;
+    }
     
     static time_t lastMoveTime = 0;
     time_t currentTime = time(NULL);
@@ -266,7 +271,6 @@ void Game::setRunning(bool status) {
     running = status;
 }
 
-// Agregar métodos getScore() y getLevel() que faltaban
 int Game::getScore() const {
     return score;
 }
@@ -305,7 +309,6 @@ void Game::checkInvaderReachBottom() {
     
     for (const auto& invader : invaders) {
         if (invader.isAlive && invader.position.y >= screen.getHeight() - 8) {
-            running = false;
             gameState = GAME_OVER;
             pthread_mutex_unlock(&gameMutex);
             return;
@@ -375,19 +378,51 @@ void Game::drawGameStateMessages() {
     pthread_mutex_lock(&gameMutex);
     
     switch(gameState) {
-        case GAME_OVER:
-            screen.drawText("GAME OVER!", Position(screen.getWidth()/2 - 5, screen.getHeight()/2));
-            screen.drawText("Press R to restart or Q to quit", Position(screen.getWidth()/2 - 15, screen.getHeight()/2 + 2));
+        case GAME_OVER: {
+            // Crear un cuadro para el mensaje de Game Over
+            int centerX = screen.getWidth() / 2;
+            int centerY = screen.getHeight() / 2;
+            
+            // Dibujar cuadro decorativo
+            for (int i = -20; i <= 20; i++) {
+                screen.setPixel(centerX + i, centerY - 4, '=');
+                screen.setPixel(centerX + i, centerY + 5, '=');
+            }
+            for (int i = -3; i <= 4; i++) {
+                screen.setPixel(centerX - 20, centerY + i, '|');
+                screen.setPixel(centerX + 20, centerY + i, '|');
+            }
+            
+            // Esquinas
+            screen.setPixel(centerX - 20, centerY - 4, '+');
+            screen.setPixel(centerX + 20, centerY - 4, '+');
+            screen.setPixel(centerX - 20, centerY + 5, '+');
+            screen.setPixel(centerX + 20, centerY + 5, '+');
+            
+            // Mensajes
+            screen.drawText("╔════════════════════╗", Position(centerX - 10, centerY - 3));
+            screen.drawText("║   GAME OVER!!!     ║", Position(centerX - 10, centerY - 2));
+            screen.drawText("╚════════════════════╝", Position(centerX - 10, centerY - 1));
+            
+            std::string scoreText = "Puntaje Final: " + std::to_string(score);
+            screen.drawText(scoreText, Position(centerX - scoreText.length()/2, centerY + 1));
+            
+            std::string levelText = "Nivel Alcanzado: " + std::to_string(level);
+            screen.drawText(levelText, Position(centerX - levelText.length()/2, centerY + 2));
+            
+            screen.drawText("Presiona R para reintentar", Position(centerX - 12, centerY + 4));
+            screen.drawText("Presiona Q para salir", Position(centerX - 11, centerY + 5));
             break;
+        }
             
         case LEVEL_COMPLETE:
-            screen.drawText("LEVEL COMPLETE!", Position(screen.getWidth()/2 - 7, screen.getHeight()/2));
-            screen.drawText("Press SPACE to continue", Position(screen.getWidth()/2 - 10, screen.getHeight()/2 + 2));
+            screen.drawText("¡NIVEL COMPLETADO!", Position(screen.getWidth()/2 - 9, screen.getHeight()/2));
+            screen.drawText("Presiona ESPACIO para continuar", Position(screen.getWidth()/2 - 15, screen.getHeight()/2 + 2));
             break;
             
         case PAUSED:
-            screen.drawText("PAUSED", Position(screen.getWidth()/2 - 3, screen.getHeight()/2));
-            screen.drawText("Press P to continue", Position(screen.getWidth()/2 - 8, screen.getHeight()/2 + 2));
+            screen.drawText("║ JUEGO PAUSADO ║", Position(screen.getWidth()/2 - 8, screen.getHeight()/2));
+            screen.drawText("Presiona P para continuar", Position(screen.getWidth()/2 - 12, screen.getHeight()/2 + 2));
             break;
         
         case PLAYING:
@@ -400,7 +435,7 @@ void Game::drawGameStateMessages() {
 void Game::handleInputImproved() {
     int key = getch();
     
-    if (key != ERR) {  // ERR significa que no hay entrada disponible
+    if (key != ERR) {
         pthread_mutex_lock(&gameMutex);
         
         switch(gameState) {

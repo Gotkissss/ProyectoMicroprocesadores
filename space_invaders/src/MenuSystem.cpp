@@ -383,7 +383,7 @@ void MenuSystem::drawTitle() {
     drawCenteredText(5, " #####  #    # #    # #      #####      #  # #  # #    # #    # #    # #####  #    #  ####  ");
     drawCenteredText(6, "      # #####  ###### #      #          #  #  # # #    # ###### #    # #      #####       # ");
     drawCenteredText(7, "#     # #      #    # #    # #          #  #   ##  #  #  #    # #    # #      #   #  #    # ");
-    drawCenteredText(7, " #####  #      #    #  ####  ######    ### #    #   ##   #    # #####  ###### #    #  ####  ");
+    drawCenteredText(8, " #####  #      #    #  ####  ######    ### #    #   ##   #    # #####  ###### #    #  ####  ");
     attroff(A_BOLD);
 }
 
