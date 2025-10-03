@@ -117,15 +117,28 @@ void Game::updateGameLogic() {
 }
 
 void Game::checkGameOverConditions() {
-    if (lives <= 0) {
+    if (gameState != PLAYING) {
+        return;
+    }
+    
+    pthread_mutex_lock(&gameMutex);
+    
+    if (lives <= 0 && gameState == PLAYING) {
         gameState = GAME_OVER;
     }
+    
+    pthread_mutex_unlock(&gameMutex);
 }
 
 void Game::updateInvaders() {
+    // Verificar primero sin mutex
+    if (!running || gameState != PLAYING) {
+        return;
+    }
+    
     pthread_mutex_lock(&gameMutex);
     
-    // Si el juego no está corriendo o no está en PLAYING, no actualizar
+    // Verificar de nuevo con mutex
     if (!running || gameState != PLAYING) {
         pthread_mutex_unlock(&gameMutex);
         return;
@@ -187,7 +200,17 @@ void Game::updateInvaders() {
 }
 
 void Game::updateProjectiles() {
+    if (!running || gameState != PLAYING) {
+        return;
+    }
+    
     pthread_mutex_lock(&gameMutex);
+    
+    // Verificar de nuevo dentro del mutex
+    if (!running || gameState != PLAYING) {
+        pthread_mutex_unlock(&gameMutex);
+        return;
+    }
     
     for (auto it = projectiles.begin(); it != projectiles.end();) {
         it->position.y += it->directionY;
@@ -204,7 +227,17 @@ void Game::updateProjectiles() {
 }
 
 void Game::checkCollisions() {
+    if (gameState != PLAYING) {
+        return;
+    }
+    
     pthread_mutex_lock(&gameMutex);
+    
+    // Verificar de nuevo dentro del mutex
+    if (gameState != PLAYING) {
+        pthread_mutex_unlock(&gameMutex);
+        return;
+    }
     
     for (auto projIt = projectiles.begin(); projIt != projectiles.end();) {
         bool hit = false;
@@ -280,7 +313,17 @@ int Game::getLevel() const {
 }
 
 void Game::checkPlayerCollisions() {
+    if (gameState != PLAYING) {
+        return;
+    }
+    
     pthread_mutex_lock(&gameMutex);
+    
+    // Verificar de nuevo dentro del mutex
+    if (gameState != PLAYING) {
+        pthread_mutex_unlock(&gameMutex);
+        return;
+    }
     
     for (auto it = projectiles.begin(); it != projectiles.end();) {
         if (it->directionY == 1) { // Proyectil de invasor (hacia abajo)
@@ -305,7 +348,17 @@ void Game::checkPlayerCollisions() {
 }
 
 void Game::checkInvaderReachBottom() {
+    if (gameState != PLAYING) {
+        return;
+    }
+    
     pthread_mutex_lock(&gameMutex);
+    
+    // Verificar de nuevo dentro del mutex
+    if (gameState != PLAYING) {
+        pthread_mutex_unlock(&gameMutex);
+        return;
+    }
     
     for (const auto& invader : invaders) {
         if (invader.isAlive && invader.position.y >= screen.getHeight() - 8) {
@@ -319,7 +372,17 @@ void Game::checkInvaderReachBottom() {
 }
 
 void Game::checkVictoryConditions() {
+    if (gameState != PLAYING) {
+        return;
+    }
+    
     pthread_mutex_lock(&gameMutex);
+    
+    // Verificar de nuevo dentro del mutex
+    if (gameState != PLAYING) {
+        pthread_mutex_unlock(&gameMutex);
+        return;
+    }
     
     bool allInvadersDead = true;
     for (const auto& invader : invaders) {
@@ -341,14 +404,31 @@ void Game::nextLevel() {
     
     level++;
     projectiles.clear();
-    generateInvaders();
-    invaderSpeed = std::max(200000, 500000 - (level * 50000));
     
+    // Reiniciar posición del jugador
     player.position.x = screen.getWidth() / 2;
     player.position.y = screen.getHeight() - 5;
     
+    // Bonus de vida cada 3 niveles (opcional)
+    if (level % 3 == 0 && lives < 5) {
+        lives++;
+        player.lives = lives;
+    }
+    
+    // Incrementar dificultad: velocidad de invasores aumenta
+    invaderSpeed = std::max(200000, 500000 - (level * 50000));
+    
+    // Cambiar estado a PLAYING
     gameState = PLAYING;
     
+    pthread_mutex_unlock(&gameMutex);
+    
+    // Pequeña pausa antes de generar los invasores
+    usleep(100000);
+    
+    // Generar invasores con mutex
+    pthread_mutex_lock(&gameMutex);
+    generateInvaders();
     pthread_mutex_unlock(&gameMutex);
 }
 
@@ -359,6 +439,7 @@ void Game::resetGame() {
     lives = 3;
     level = 1;
     invaderSpeed = 500000;
+    lastShotTime = 0;
     
     player.score = score;
     player.lives = lives;
@@ -366,11 +447,18 @@ void Game::resetGame() {
     player.position.y = screen.getHeight() - 5;
     
     projectiles.clear();
-    generateInvaders();
     
+    // Cambiar estado a PLAYING primero
     gameState = PLAYING;
-    running = true;
     
+    pthread_mutex_unlock(&gameMutex);
+    
+    // Pequeña pausa antes de generar los invasores
+    usleep(100000);
+    
+    // Generar invasores con mutex
+    pthread_mutex_lock(&gameMutex);
+    generateInvaders();
     pthread_mutex_unlock(&gameMutex);
 }
 
@@ -384,46 +472,84 @@ void Game::drawGameStateMessages() {
             int centerY = screen.getHeight() / 2;
             
             // Dibujar cuadro decorativo
-            for (int i = -20; i <= 20; i++) {
+            for (int i = -25; i <= 25; i++) {
+                screen.setPixel(centerX + i, centerY - 5, '=');
+                screen.setPixel(centerX + i, centerY + 6, '=');
+            }
+            for (int i = -4; i <= 5; i++) {
+                screen.setPixel(centerX - 25, centerY + i, '|');
+                screen.setPixel(centerX + 25, centerY + i, '|');
+            }
+            
+            // Esquinas
+            screen.setPixel(centerX - 25, centerY - 5, '+');
+            screen.setPixel(centerX + 25, centerY - 5, '+');
+            screen.setPixel(centerX - 25, centerY + 6, '+');
+            screen.setPixel(centerX + 25, centerY + 6, '+');
+            
+            // Mensajes
+            screen.drawText("===========================", Position(centerX - 13, centerY - 4));
+            screen.drawText("     GAME OVER!!!         ", Position(centerX - 13, centerY - 3));
+            screen.drawText("===========================", Position(centerX - 13, centerY - 2));
+            
+            std::string scoreText = "Puntaje Final: " + std::to_string(score);
+            screen.drawText(scoreText, Position(centerX - scoreText.length()/2, centerY));
+            
+            std::string levelText = "Nivel Alcanzado: " + std::to_string(level);
+            screen.drawText(levelText, Position(centerX - levelText.length()/2, centerY + 1));
+            
+            screen.drawText("=====================================", Position(centerX - 18, centerY + 3));
+            screen.drawText("  Presiona R para REINICIAR        ", Position(centerX - 18, centerY + 4));
+            screen.drawText("  Presiona Q para SALIR al menu    ", Position(centerX - 18, centerY + 5));
+            screen.drawText("=====================================", Position(centerX - 18, centerY + 6));
+            break;
+        }
+            
+        case LEVEL_COMPLETE: {
+            int centerX = screen.getWidth() / 2;
+            int centerY = screen.getHeight() / 2;
+            
+            // Cuadro decorativo
+            for (int i = -22; i <= 22; i++) {
                 screen.setPixel(centerX + i, centerY - 4, '=');
                 screen.setPixel(centerX + i, centerY + 5, '=');
             }
             for (int i = -3; i <= 4; i++) {
-                screen.setPixel(centerX - 20, centerY + i, '|');
-                screen.setPixel(centerX + 20, centerY + i, '|');
+                screen.setPixel(centerX - 22, centerY + i, '|');
+                screen.setPixel(centerX + 22, centerY + i, '|');
             }
             
             // Esquinas
-            screen.setPixel(centerX - 20, centerY - 4, '+');
-            screen.setPixel(centerX + 20, centerY - 4, '+');
-            screen.setPixel(centerX - 20, centerY + 5, '+');
-            screen.setPixel(centerX + 20, centerY + 5, '+');
+            screen.setPixel(centerX - 22, centerY - 4, '+');
+            screen.setPixel(centerX + 22, centerY - 4, '+');
+            screen.setPixel(centerX - 22, centerY + 5, '+');
+            screen.setPixel(centerX + 22, centerY + 5, '+');
             
-            // Mensajes
-            screen.drawText("╔════════════════════╗", Position(centerX - 10, centerY - 3));
-            screen.drawText("║   GAME OVER!!!     ║", Position(centerX - 10, centerY - 2));
-            screen.drawText("╚════════════════════╝", Position(centerX - 10, centerY - 1));
+            screen.drawText("============================", Position(centerX - 14, centerY - 3));
+            screen.drawText("  NIVEL COMPLETADO!        ", Position(centerX - 14, centerY - 2));
+            screen.drawText("============================", Position(centerX - 14, centerY - 1));
             
-            std::string scoreText = "Puntaje Final: " + std::to_string(score);
-            screen.drawText(scoreText, Position(centerX - scoreText.length()/2, centerY + 1));
+            std::string nextLevelText = "Siguiente Nivel: " + std::to_string(level + 1);
+            screen.drawText(nextLevelText, Position(centerX - nextLevelText.length()/2, centerY + 1));
             
-            std::string levelText = "Nivel Alcanzado: " + std::to_string(level);
-            screen.drawText(levelText, Position(centerX - levelText.length()/2, centerY + 2));
+            std::string currentScore = "Puntaje Actual: " + std::to_string(score);
+            screen.drawText(currentScore, Position(centerX - currentScore.length()/2, centerY + 2));
             
-            screen.drawText("Presiona R para reintentar", Position(centerX - 12, centerY + 4));
-            screen.drawText("Presiona Q para salir", Position(centerX - 11, centerY + 5));
+            screen.drawText("Presiona ESPACIO para CONTINUAR", Position(centerX - 15, centerY + 4));
+            screen.drawText("Presiona Q para SALIR al menu", Position(centerX - 14, centerY + 5));
             break;
         }
             
-        case LEVEL_COMPLETE:
-            screen.drawText("¡NIVEL COMPLETADO!", Position(screen.getWidth()/2 - 9, screen.getHeight()/2));
-            screen.drawText("Presiona ESPACIO para continuar", Position(screen.getWidth()/2 - 15, screen.getHeight()/2 + 2));
-            break;
+        case PAUSED: {
+            int centerX = screen.getWidth() / 2;
+            int centerY = screen.getHeight() / 2;
             
-        case PAUSED:
-            screen.drawText("║ JUEGO PAUSADO ║", Position(screen.getWidth()/2 - 8, screen.getHeight()/2));
-            screen.drawText("Presiona P para continuar", Position(screen.getWidth()/2 - 12, screen.getHeight()/2 + 2));
+            screen.drawText("====================", Position(centerX - 10, centerY - 1));
+            screen.drawText("  JUEGO PAUSADO     ", Position(centerX - 10, centerY));
+            screen.drawText("====================", Position(centerX - 10, centerY + 1));
+            screen.drawText("Presiona P para continuar", Position(centerX - 12, centerY + 3));
             break;
+        }
         
         case PLAYING:
             break;
@@ -438,33 +564,53 @@ void Game::handleInputImproved() {
     if (key != ERR) {
         pthread_mutex_lock(&gameMutex);
         
-        switch(gameState) {
+        GameState currentGameState = gameState;
+        
+        pthread_mutex_unlock(&gameMutex);
+        
+        // Manejar input según el estado (sin mutex para evitar deadlocks)
+        switch(currentGameState) {
             case PLAYING:
+                pthread_mutex_lock(&gameMutex);
                 handlePlayingInput(key);
+                pthread_mutex_unlock(&gameMutex);
                 break;
                 
             case GAME_OVER:
                 if (key == 'r' || key == 'R') {
                     resetGame();
-                } else if (key == 'q' || key == 'Q' || key == 27) {
+                } else if (key == 'm' || key == 'M' || key == 'q' || key == 'Q' || key == 27) {
+                    // Volver al menú principal (no salir del programa)
+                    pthread_mutex_lock(&gameMutex);
                     running = false;
+                    pthread_mutex_unlock(&gameMutex);
                 }
                 break;
                 
             case LEVEL_COMPLETE:
                 if (key == ' ') {
                     nextLevel();
+                } else if (key == 'm' || key == 'M' || key == 'q' || key == 'Q' || key == 27) {
+                    // Volver al menú principal (no salir del programa)
+                    pthread_mutex_lock(&gameMutex);
+                    running = false;
+                    pthread_mutex_unlock(&gameMutex);
                 }
                 break;
                 
             case PAUSED:
                 if (key == 'p' || key == 'P') {
+                    pthread_mutex_lock(&gameMutex);
                     gameState = PLAYING;
+                    pthread_mutex_unlock(&gameMutex);
+                } else if (key == 'm' || key == 'M' || key == 'q' || key == 'Q' || key == 27) {
+                    // Volver al menú principal (no salir del programa)
+                    pthread_mutex_lock(&gameMutex);
+                    running = false;
+                    pthread_mutex_unlock(&gameMutex);
                 }
                 break;
         }
-        
-        pthread_mutex_unlock(&gameMutex);
     }
 }
 
@@ -497,8 +643,9 @@ void Game::handlePlayingInput(int key) {
             gameState = PAUSED;
             break;
             
-        case 'q': case 'Q': case 27:
-            running = false;
+        case 'm': case 'M': case 'q': case 'Q': case 27:
+            // Pausar primero, luego permitir salir
+            gameState = PAUSED;
             break;
     }
 }

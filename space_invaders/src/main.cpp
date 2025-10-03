@@ -17,8 +17,14 @@ bool threadRunning = false;
 void* invaderThreadFunction(void* arg) {
     Game* game = static_cast<Game*>(arg);
     
-    while (threadRunning && game->isRunning()) {
-        game->updateInvaders();
+    while (threadRunning) {
+        // Verificar que el puntero sea válido
+        if (game != nullptr && game->isRunning()) {
+            game->updateInvaders();
+        } else {
+            // Si el juego no está corriendo, esperar un poco más
+            usleep(50000);
+        }
         usleep(100000); // 100ms entre actualizaciones de invasores
     }
     
@@ -32,6 +38,10 @@ int main() {
     bool keepPlaying = true;
     
     while (keepPlaying) {
+        // Asegurarse de que la terminal esté limpia
+        int clearResult = system("clear");
+        (void)clearResult; // Suprimir warning
+        
         // Crear sistema de menús
         MenuSystem menu;
         
@@ -39,7 +49,6 @@ int main() {
         MenuState result = menu.run();
         
         if (result == EXIT_PROGRAM) {
-            std::cout << "¡Gracias por jugar Space Invaders!" << std::endl;
             keepPlaying = false;
             break;
         }
@@ -51,6 +60,9 @@ int main() {
             // El MenuSystem termina ncurses al destruirse aquí
             // (cuando sale del scope al final del if)
             
+            // Pequeña pausa para asegurar limpieza del menú
+            usleep(150000);
+            
             // Verificar tamaño de terminal
             initscr();
             int maxY, maxX;
@@ -61,7 +73,8 @@ int main() {
                 std::cout << "Error: El terminal debe ser de al menos 25x80 caracteres." << std::endl;
                 std::cout << "Tamaño actual: " << maxY << "x" << maxX << std::endl;
                 std::cout << "Por favor ajusta el tamaño de tu terminal y vuelve a ejecutar." << std::endl;
-                return 1;
+                sleep(2);
+                continue;
             }
             
             // Crear objetos del juego
@@ -79,7 +92,9 @@ int main() {
             if (pthread_create(&invaderThread, nullptr, invaderThreadFunction, &game) != 0) {
                 std::cerr << "Error: No se pudo crear el hilo de invasores" << std::endl;
                 endwin();
-                return 1;
+                gameInstance = nullptr;
+                sleep(2);
+                continue;
             }
             
             // Ejecutar el juego
@@ -87,32 +102,53 @@ int main() {
             
             // Detener hilo de forma segura
             threadRunning = false;
+            
+            // Esperar a que el hilo termine
             pthread_join(invaderThread, nullptr);
             
-            // Terminar ncurses antes de cualquier operación
+            // Guardar puntaje antes de terminar ncurses
+            int finalScore = game.getScore();
+            int finalLevel = game.getLevel();
+            
+            // Terminar ncurses COMPLETAMENTE
             endwin();
             
+            // Limpiar puntero
+            gameInstance = nullptr;
+            
+            // Pausa más larga para asegurar limpieza completa de ncurses
+            usleep(250000);
+            
+            // Limpiar la terminal completamente
+            clearResult = system("clear");
+            (void)clearResult; // Suprimir warning
+            
+            // Limpiar cualquier basura en el buffer de entrada
+            fflush(stdin);
+            
             // Guardar puntaje si el jugador jugó
-            if (game.getScore() > 0) {
+            if (finalScore > 0) {
                 // Crear un nuevo MenuSystem solo para guardar el puntaje
                 MenuSystem scoreMenu;
-                scoreMenu.addHighScore(playerName, game.getScore(), game.getLevel());
+                scoreMenu.addHighScore(playerName, finalScore, finalLevel);
                 // scoreMenu se destruye aquí automáticamente
             }
             
             // Mostrar estadísticas finales
             std::cout << "\n==================================" << std::endl;
-            std::cout << "    ESTADÍSTICAS FINALES" << std::endl;
+            std::cout << "    ESTADISTICAS FINALES" << std::endl;
             std::cout << "==================================" << std::endl;
             std::cout << "Jugador: " << playerName << std::endl;
-            std::cout << "Puntaje Final: " << game.getScore() << std::endl;
-            std::cout << "Nivel Alcanzado: " << game.getLevel() << std::endl;
+            std::cout << "Puntaje Final: " << finalScore << std::endl;
+            std::cout << "Nivel Alcanzado: " << finalLevel << std::endl;
             std::cout << "==================================" << std::endl;
+            std::cout << "\nVolviendo al menu principal..." << std::endl;
             
-            // Pequeña pausa antes de volver al menú
+            // Esperar 2 segundos antes de volver al menú
             sleep(2);
         }
     }
     
+    std::cout << "\n¡Gracias por jugar Space Invaders!" << std::endl;
     return 0;
 }

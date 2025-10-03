@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <ctime>
 #include <cstring>
+#include <unistd.h>
 
 MenuSystem::MenuSystem() {
     currentState = MAIN_MENU;
@@ -13,19 +14,32 @@ MenuSystem::MenuSystem() {
     highScoreFile = "high_scores.txt";
     playerName = "";
     
+    // Asegurarse de que ncurses esté limpio antes de inicializar
+    endwin();
+    usleep(50000);
+    
     // Inicializar ncurses
     initscr();
     noecho();
     cbreak();
     keypad(stdscr, TRUE);
     curs_set(0);
+    timeout(100); // Timeout de 100ms para evitar bloqueos
+    
+    // Limpiar pantalla inicial
+    clear();
+    refresh();
     
     // Cargar puntajes
     loadHighScores();
 }
 
 MenuSystem::~MenuSystem() {
+    clear();
+    refresh();
     endwin();
+    // Pequeña pausa para asegurar limpieza
+    usleep(50000);
 }
 
 MenuState MenuSystem::run() {
@@ -52,7 +66,14 @@ MenuState MenuSystem::run() {
         }
         
         refresh();
+        
+        // Usar getch con timeout para evitar parpadeos
         key = getch();
+        
+        // Si no hay tecla, continuar el loop sin procesar
+        if (key == ERR) {
+            continue;
+        }
         
         // Manejar entrada según el estado actual
         switch (currentState) {
@@ -124,7 +145,7 @@ void MenuSystem::drawInstructions() {
     drawCenteredText(12, "D / Flecha Derecha    - Mover nave a la derecha");
     drawCenteredText(13, "ESPACIO               - Disparar");
     drawCenteredText(14, "P                     - Pausar juego");
-    drawCenteredText(15, "Q / ESC               - Salir del juego");
+    drawCenteredText(15, "M                     - Volver al menu (desde pausa)");
     
     // Elementos del juego
     drawCenteredText(17, "ELEMENTOS DEL JUEGO:");
